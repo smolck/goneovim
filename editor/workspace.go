@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/akiyosi/gonvim/fuzzy"
+	"github.com/akiyosi/gonvim/lsp"
 	shortpath "github.com/akiyosi/short_path"
 	"github.com/neovim/go-client/nvim"
 	"github.com/therecipe/qt/core"
@@ -49,6 +50,7 @@ type Workspace struct {
 	loc        *Locpopup
 	cmdline    *Cmdline
 	signature  *Signature
+	hover      *Hover
 	// Need https://github.com/neovim/neovim/pull/7466 to be merged
 	// message    *Message
 	minimap *MiniMap
@@ -159,6 +161,9 @@ func newWorkspace(path string) (*Workspace, error) {
 	w.signature = initSignature()
 	w.signature.widget.SetParent(w.screen.widget)
 	w.signature.ws = w
+	w.hover = initHover()
+	w.hover.widget.SetParent(w.screen.widget)
+	w.hover.ws = w
 	// Need https://github.com/neovim/neovim/pull/7466 to be merged
 	// w.message = initMessage()
 	// w.message.widget.SetParent(w.screen.widget)
@@ -203,6 +208,7 @@ func newWorkspace(path string) (*Workspace, error) {
 	w.palette.hide()
 	w.loc.widget.Hide()
 	w.signature.widget.Hide()
+	w.hover.widget.Hide()
 
 	w.widget.SetParent(editor.wsWidget)
 	w.widget.Move2(0, 0)
@@ -969,6 +975,12 @@ func (w *Workspace) handleRPCGui(updates []interface{}) {
 		w.signature.pos(updates[1:])
 	case "signature_hide":
 		w.signature.hide()
+	case "hover_show":
+		w.hover.showItem(updates[1:])
+	case "hover_pos":
+		w.hover.pos(updates[1:])
+	case "hover_hide":
+		w.hover.hide()
 	case "gonvim_cursormoved":
 		pos := updates[1].([]interface{})
 		ln := reflectToInt(pos[1])
@@ -976,6 +988,7 @@ func (w *Workspace) handleRPCGui(updates []interface{}) {
 		w.statusline.pos.redraw(ln, col)
 		w.curLine = ln
 		w.curColm = col
+		w.hover.hide()
 	case "gonvim_minimap_update":
 		if w.minimap.visible {
 			w.minimap.bufUpdate()
@@ -1360,7 +1373,7 @@ func (i *WorkspaceSideItem) setInactive() {
 	}
 	if editor.colors.fg == nil || editor.colors.bg == nil {
 		return
-	}
+	
 	i.active = false
 	bg := editor.colors.sideBarBg
 	fg := editor.colors.inactiveFg
