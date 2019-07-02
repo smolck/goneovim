@@ -43,6 +43,17 @@ type Cell struct {
 	highlight   Highlight
 }
 
+// Cells is
+type Cells struct {
+	text        string
+	highlight   Highlight
+}
+
+type Image struct {
+	pic     *gui.QImage
+	dirty   int
+}
+
 // Window is
 type Window struct {
 	paintMutex  sync.Mutex
@@ -63,7 +74,9 @@ type Window struct {
 	queueRedrawArea  [4]int
 	scrollRegion     []int
 	devicePixelRatio float64
+	wordCache        map[Cells]*Image
 	jkScroll         bool
+
 
 	// NOTE:
 	// Only use minimap
@@ -360,6 +373,7 @@ func (w *Window) paint(event *gui.QPaintEvent) {
 		}
 		w.fillBackground(p, y, col, cols)
 		w.drawChars(p, y, col, cols)
+		// w.drawTexts(p, y, col, cols)
 		w.drawTextDecoration(p, y, col, cols)
 	}
 
@@ -1554,6 +1568,112 @@ func (w *Window) fillBackground(p *gui.QPainter, y int, col int, cols int) {
 	}
 }
 
+func (w *Window) drawTexts(p *gui.QPainter, y int, col int, cols int) {
+	if y >= len(w.content) {
+		return
+	}
+	wsfont := w.s.ws.font
+	// font := p.Font()
+	line := w.content[y]
+	chars := map[Highlight][]int{}
+	specialChars := []int{}
+
+	for x := col; x < col+cols; x++ {
+		if x > w.lenLine[y] {
+			break
+		}
+		if x >= len(line) {
+			continue
+		}
+		if line[x] == nil {
+			continue
+		}
+		if line[x].char == " " {
+			continue
+		}
+		if line[x].char == "" {
+			continue
+		}
+		if !line[x].normalWidth {
+			specialChars = append(specialChars, x)
+			continue
+		}
+
+		highlight := line[x].highlight
+		colorSlice, ok := chars[highlight]
+		if !ok {
+			colorSlice = []int{}
+		}
+		colorSlice = append(colorSlice, x)
+		chars[highlight] = colorSlice
+
+	}
+
+	pointF := core.NewQPointF3(
+		float64(col) * wsfont.truewidth,
+		float64(y*wsfont.lineHeight),
+	)
+
+	for highlight, colorSlice := range chars {
+		var buffer bytes.Buffer
+		slice := colorSlice[:]
+		for x := col; x < col+cols; x++ {
+			if len(slice) == 0 {
+				break
+			}
+			index := slice[0]
+			if x < index {
+				buffer.WriteString(" ")
+				continue
+			}
+			if x == index {
+				buffer.WriteString(line[x].char)
+				slice = slice[1:]
+			}
+		}
+
+		text := buffer.String()
+		if text != "" {
+			glyph := w.wordCache[Cells{text, highlight}]
+			if glyph == nil {
+				glyph = w.newWordCache(p, text, highlight)
+			} else {
+				glyph.dirty++
+			}
+			p.DrawImage7(
+				pointF,
+				glyph.pic,
+			)
+			if glyph.dirty >= len(w.content)-1 {
+				w.wordCache[Cells{text, highlight}] = nil
+			}
+		}
+
+	}
+
+	for _, x := range specialChars {
+		if line[x] == nil || line[x].char == " " {
+			continue
+		}
+		glyph := w.wordCache[Cells{line[x].char, line[x].highlight}]
+		if glyph == nil {
+			glyph = w.newWordCache(p, line[x].char, line[x].highlight)
+		} else {
+			glyph.dirty++
+		}
+		p.DrawImage7(
+			core.NewQPointF3(
+				float64(x)*wsfont.truewidth,
+				float64(y*wsfont.lineHeight),
+			),
+			glyph.pic,
+		)
+		if glyph.dirty >= len(w.content)-1 {
+			w.wordCache[Cells{line[x].char, line[x].highlight}] = nil
+		}
+	}
+}
+
 func (w *Window) drawChars(p *gui.QPainter, y int, col int, cols int) {
 	if y >= len(w.content) {
 		return
@@ -1769,6 +1889,66 @@ func (w *Window) drawText(p *gui.QPainter, y int, col int, cols int) {
 	}
 }
 
+func (w *Window) newWordCache(p *gui.QPainter, text string, highlight Highlight) *Image {
+	// * Ref: https://stackoverflow.com/questions/40458515/a-best-way-to-draw-a-lot-of-independent-characters-in-qt5/40476430#40476430
+
+	// Skip draw char if
+	if editor.config.Editor.DiffAddPattern != 1 && highlight.hiName == "DiffAdd" {
+		text = " "
+	}
+	if editor.config.Editor.DiffDeletePattern != 1 && highlight.hiName == "DiffDelete" {
+		text = " "
+	}
+
+	width := float64(len(text)) * w.s.ws.font.truewidth
+
+	if highlight.foreground == nil {
+		highlight.foreground = w.s.ws.foreground
+	}
+
+	// QImage default device pixel ratio is 1.0,
+	// So we set the correct device pixel ratio
+	glyph := gui.NewQImage2(
+		core.NewQRectF4(
+			0,
+			0,
+			w.devicePixelRatio*width,
+			w.devicePixelRatio*float64(w.s.ws.font.lineHeight),
+		).Size().ToSize(),
+		gui.QImage__Format_ARGB32_Premultiplied,
+	)
+	glyph.SetDevicePixelRatio(w.devicePixelRatio)
+	glyph.Fill3(core.Qt__transparent)
+
+	p = gui.NewQPainter2(glyph)
+	p.SetPen2(gui.NewQColor3(
+		highlight.foreground.R,
+		highlight.foreground.G,
+		highlight.foreground.B,
+		255))
+
+	p.SetFont(w.s.ws.font.fontNew)
+	font := p.Font()
+	font.SetBold(highlight.bold)
+	font.SetItalic(highlight.italic)
+	p.SetFont(font)
+
+	p.DrawText5(
+		core.NewQRectF4(
+			0,
+			0,
+			width,
+			float64(w.s.ws.font.lineHeight),
+		),
+		int(core.Qt__AlignVCenter),
+		text,
+		nil,
+	)
+	w.wordCache[Cells{text, highlight}] = &Image{glyph, 0}
+
+	return &Image{glyph, 0}
+}
+
 func (w *Window) newGlyph(p *gui.QPainter, cell *Cell) *gui.QImage {
 	// * Ref: https://stackoverflow.com/questions/40458515/a-best-way-to-draw-a-lot-of-independent-characters-in-qt5/40476430#40476430
 
@@ -1918,6 +2098,7 @@ func newWindow() *Window {
 		widget:           widget,
 		scrollRegion:     []int{0, 0, 0, 0},
 		devicePixelRatio: devicePixelRatio,
+		wordCache:     	  make(map[Cells]*Image),
 	}
 
 	widget.ConnectPaintEvent(w.paint)
