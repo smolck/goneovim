@@ -1180,37 +1180,45 @@ func (w *Workspace) guiLinespace(args interface{}) {
 
 // InputMethodEvent is
 func (w *Workspace) InputMethodEvent(event *gui.QInputMethodEvent) {
-	if event.CommitString() != "" {
-		w.nvim.Input(event.CommitString())
-		w.screen.tooltip.Hide()
-	} else {
-		preeditString := event.PreeditString()
-		if preeditString == "" {
-			w.screen.tooltip.Hide()
-			w.cursor.update()
-		} else {
-			w.screen.toolTip(preeditString)
-		}
-	}
+	w.screen.tooltip.SetParent(w.screen.windows[w.cursor.gridid].widget)
+	w.screen.tooltip.SetFocusPolicy(core.Qt__StrongFocus);
+	w.screen.tooltip.Show()
+	go w.screen.tooltip.SetFocus2()
+	w.screen.tooltip.InputMethodEventDefault(event)
+
+	// if event.CommitString() != "" {
+	// 	w.nvim.Input(event.CommitString())
+	// 	w.screen.tooltip.Hide()
+	// } else {
+	// 	preeditString := event.PreeditString()
+	// 	if preeditString == "" {
+	// 		w.screen.tooltip.Hide()
+	// 		w.cursor.update()
+	// 	} else {
+	// 		w.screen.toolTip(preeditString)
+	// 	}
+	// }
 }
 
 // InputMethodQuery is
 func (w *Workspace) InputMethodQuery(query core.Qt__InputMethodQuery) *core.QVariant {
-	if query == core.Qt__ImCursorRectangle {
-		x, y, candX, candY := w.screen.toolTipPos()
-		w.screen.toolTipMove(x, y)
-		imrect := core.NewQRect()
-		imrect.SetRect(candX, candY, 1, w.font.lineHeight)
+	return w.screen.tooltip.InputMethodQueryDefault(query)
 
-		if w.palette.widget.IsVisible() {
-			w.cursor.x = x
-			w.cursor.y = w.palette.patternPadding + w.cursor.shift
-			w.cursor.widget.Move2(w.cursor.x, w.cursor.y)
-		}
+	// if query == core.Qt__ImCursorRectangle {
+	// 	x, y, candX, candY := w.screen.toolTipPos()
+	// 	w.screen.toolTipMove(x, y)
+	// 	imrect := core.NewQRect()
+	// 	imrect.SetRect(candX, candY, 1, w.font.lineHeight)
 
-		return core.NewQVariant31(imrect)
-	}
-	return core.NewQVariant()
+	// 	if w.palette.widget.IsVisible() {
+	// 		w.cursor.x = x
+	// 		w.cursor.y = w.palette.patternPadding + w.cursor.shift
+	// 		w.cursor.widget.Move2(w.cursor.x, w.cursor.y)
+	// 	}
+
+	// 	return core.NewQVariant31(imrect)
+	// }
+	// return core.NewQVariant()
 }
 
 // WorkspaceSide is

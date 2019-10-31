@@ -125,7 +125,8 @@ type Screen struct {
 	highAttrDef    map[int]*Highlight
 	highlightGroup map[string]int
 
-	tooltip *widgets.QLabel
+	// tooltip *widgets.QLabel
+	tooltip *widgets.QLineEdit
 
 	queueRedrawArea [4]int
 	textCache        gcache.Cache
@@ -172,9 +173,48 @@ func newScreen() *Screen {
 }
 
 func (s *Screen) initInputMethodWidget() {
-	tooltip := widgets.NewQLabel(s.widget, 0)
+	// tooltip := widgets.NewQLabel(s.widget, 0)
+	tooltip := widgets.NewQLineEdit(nil)
+	tooltip.SetAttribute(core.Qt__WA_InputMethodEnabled, true)
 	tooltip.SetVisible(false)
+	tooltip.ConnectInputMethodEvent(s.inputmethodevent)
+	tooltip.ConnectInputMethodQuery(s.inputmethodquery)
+	tooltip.ConnectReturnPressed(func() {
+		s.ws.nvim.Input(s.tooltip.Text())
+		s.tooltip.SetFocusPolicy(core.Qt__NoFocus);
+		s.tooltip.Clear()
+		s.tooltip.Hide()
+	})
 	s.tooltip = tooltip
+}
+
+func (s *Screen) inputmethodevent(event *gui.QInputMethodEvent) {
+	if event.CommitString() != "" && event.PreeditString() == "" {
+		s.tooltip.InputMethodEventDefault(event)
+		s.tooltip.ReturnPressed()
+	} else {
+		s.tooltip.InputMethodEventDefault(event)
+	}
+}
+
+
+func (s *Screen) inputmethodquery(query core.Qt__InputMethodQuery) *core.QVariant {
+	w := s.ws
+	if query == core.Qt__ImCursorRectangle {
+		x, y, candX, candY := w.screen.toolTipPos()
+		w.screen.toolTipMove(x, y)
+		imrect := core.NewQRect()
+		imrect.SetRect(candX, candY, 1, w.font.lineHeight)
+
+		if w.palette.widget.IsVisible() {
+			w.cursor.x = x
+			w.cursor.y = w.palette.patternPadding + w.cursor.shift
+			w.cursor.widget.Move2(w.cursor.x, w.cursor.y)
+		}
+
+		return core.NewQVariant31(imrect)
+	}
+	return s.tooltip.InputMethodQueryDefault(query)
 }
 
 func (s *Screen) dragEnterEvent(e *gui.QDragEnterEvent) {
