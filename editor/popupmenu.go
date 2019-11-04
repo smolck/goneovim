@@ -3,6 +3,7 @@ package editor
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"strconv"
 
 	"github.com/therecipe/qt/core"
@@ -84,23 +85,16 @@ func initPopupmenuNew() *PopupMenu {
 		kindlayout := widgets.NewQHBoxLayout()
 		kindlayout.SetContentsMargins(editor.iconSize/2, 0, editor.iconSize/2, 0)
 		kindWidget.SetLayout(kindlayout)
-		// kindWidget.SetStyleSheet(" * {background-color: rgba(0, 0, 0, 0); }")
 		kindIcon := svg.NewQSvgWidget(nil)
 		kindIcon.SetFixedSize2(editor.iconSize, editor.iconSize)
 		kindlayout.AddWidget(kindIcon, 0, 0)
 
 		menu := widgets.NewQLabel(nil, 0)
 		menu.SetContentsMargins(1, margin, margin, margin)
-		// menu.SetStyleSheet(" * {background-color: rgba(0, 0, 0, 0); }")
 
 		detail := widgets.NewQLabel(nil, 0)
 		detail.SetContentsMargins(margin, margin, margin, margin)
 		detail.SetObjectName("detailpopup")
-		// detail.SetStyleSheet(" * {background-color: rgba(0, 0, 0, 0); }")
-
-		// kindWidget.SetStyleSheet(" * {background-color: rgba(0, 0, 0, 0); }")
-		// menu.SetStyleSheet(" * {background-color: rgba(0, 0, 0, 0); }")
-		// detail.SetStyleSheet(" * {background-color: rgba(0, 0, 0, 0); }")
 
 		layout.AddWidget2(kindWidget, i, 0, 0)
 		layout.AddWidget2(menu, i, 1, 0)
@@ -144,8 +138,18 @@ func (p *PopupMenu) setColor() {
 	inactiveFg := editor.colors.inactiveFg.String()
 	bg := editor.colors.widgetBg
 	transparent := transparent()
-	p.scrollBar.SetStyleSheet(fmt.Sprintf("background-color: %s;", inactiveFg))
-	p.widget.SetStyleSheet(fmt.Sprintf("* {background-color: rgba(%d, %d, %d, %f); color: %s;} #detailpopup { color: %s; }", bg.R, bg.G, bg.B, transparent, fg, inactiveFg))
+	p.scrollBar.SetStyleSheet(
+		fmt.Sprintf("background-color: %s;", inactiveFg),
+	)
+	p.widget.SetStyleSheet(
+		fmt.Sprintf(
+			"* {background-color: rgba(%d, %d, %d, %f); color: %s;} #detailpopup { color: %s; }",
+			bg.R, bg.G, bg.B,
+			transparent,
+			fg,
+			inactiveFg,
+		),
+	)
 }
 
 func (p *PopupMenu) setPumblend(arg interface{}) {
@@ -172,8 +176,18 @@ func (p *PopupMenu) setPumblend(arg interface{}) {
 	fg := editor.colors.widgetFg.String()
 	inactiveFg := editor.colors.inactiveFg.String()
 	bg := editor.colors.widgetBg
-	p.scrollBar.SetStyleSheet(fmt.Sprintf("background-color: %s;", inactiveFg))
-	p.widget.SetStyleSheet(fmt.Sprintf("* {background-color: rgba(%d, %d, %d, %f); color: %s;} #detailpopup { color: %s; }", bg.R, bg.G, bg.B, alpha, fg, inactiveFg))
+	p.scrollBar.SetStyleSheet(
+		fmt.Sprintf("background-color: %s;", inactiveFg),
+	)
+	p.widget.SetStyleSheet(
+		fmt.Sprintf(
+			"* {background-color: rgba(%d, %d, %d, %f); color: %s;} #detailpopup { color: %s; }",
+			bg.R, bg.G, bg.B,
+			alpha,
+			fg,
+			inactiveFg,
+		),
+	)
 }
 
 func (p *PopupMenu) showItems(args []interface{}) {
@@ -189,9 +203,10 @@ func (p *PopupMenu) showItems(args []interface{}) {
 	p.top = 0
 
 	popupItems := p.items
-	itemHeight := p.ws.font.height + 20
+	itemHeight := p.ws.font.lineHeight
 	heightLeft := p.ws.screen.height - (row+1)*p.ws.font.lineHeight
 	total := heightLeft / itemHeight
+
 	if total < p.total {
 		p.showTotal = total
 	} else {
@@ -230,6 +245,7 @@ func (p *PopupMenu) showItems(args []interface{}) {
 	if x+popupWidth >= p.ws.screen.widget.Width() {
 		x = p.ws.screen.widget.Width() - popupWidth - 5
 	}
+
 	win := p.ws.screen.windows[gridid]
 	if win != nil {
 		x += int(float64(win.pos[0]) * p.ws.font.truewidth)
@@ -358,18 +374,35 @@ func detectVimCompleteMode() (string, error) {
 }
 
 func (p *PopupItem) setKind(kindText string, selected bool) {
-	switch kindText {
+	lowerKindText := strings.ToLower(kindText)
+	hiAttrDef := editor.workspaces[editor.active].screen.highAttrDef
+	var colorOfFunc, colorOfStatement, colorOfType, colorOfKeyword *RGBA
+	for _, hi := range hiAttrDef {
+		switch hi.hlName {
+		case "Function":
+			colorOfFunc = hi.fg()
+		case "Statement":
+			colorOfStatement = hi.fg()
+		case "Type":
+			colorOfType = hi.fg()
+		case "String":
+			colorOfKeyword = hi.fg()
+		default:
+			continue
+		}
+	}
+	switch lowerKindText {
 	case "function", "func":
-		icon := editor.getSvg("lsp_function", nil)
+		icon := editor.getSvg("lsp_function", colorOfFunc)
 		p.kindIcon.Load2(core.NewQByteArray2(icon, len(icon)))
 	case "var", "statement", "instance", "param", "import":
-		icon := editor.getSvg("lsp_variable", nil)
+		icon := editor.getSvg("lsp_variable", colorOfStatement)
 		p.kindIcon.Load2(core.NewQByteArray2(icon, len(icon)))
 	case "class", "type", "struct":
-		icon := editor.getSvg("lsp_class", nil)
+		icon := editor.getSvg("lsp_class", colorOfType)
 		p.kindIcon.Load2(core.NewQByteArray2(icon, len(icon)))
 	case "const", "module", "keyword", "package":
-		icon := editor.getSvg("lsp_"+kindText, nil)
+		icon := editor.getSvg("lsp_"+lowerKindText, colorOfKeyword)
 		p.kindIcon.Load2(core.NewQByteArray2(icon, len(icon)))
 	default:
 		kind, err := detectVimCompleteMode()
